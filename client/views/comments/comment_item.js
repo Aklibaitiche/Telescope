@@ -104,14 +104,18 @@ Template[getTemplate('comment_item')].helpers({
     if (user) {
       return getProfileUrl(user);
     }
+  },
+  pointsUnitDisplayText: function(){
+    return this.upvotes == 1 ? i18n.t('point') : i18n.t('points');
   }
 });
 
 var handleVoteClick = function (meteorMethodName, eventName, e, instance) {
   e.preventDefault();
+  e.stopImmediatePropagation(); // needed to prevent the handler running multiple times in nested comments
   if (!Meteor.user()){
     Router.go('atSignIn');
-    flashMessage(i18n.t('please_log_in_first'), 'info');
+    Messages.flash(i18n.t('please_log_in_first'), 'info');
   } else {
     Meteor.call(meteorMethodName, this, function(error, result){
       trackEvent(eventName, {
