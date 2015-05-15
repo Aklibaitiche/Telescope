@@ -1,5 +1,8 @@
 Meteor.startup(function () {
-  Template[getTemplate('categoriesMenu')].helpers({
+  Template.categoriesMenu.helpers({
+    hasCategories: function () {
+      return Categories.find().count();
+    },
     menuItems: function () {
       var defaultItem = [{
         route: 'posts_default',
@@ -12,14 +15,14 @@ Meteor.startup(function () {
             return getCategoryUrl(category.slug);
           },
           label: category.name
-        }
+        };
       });
       return defaultItem.concat(menuItems);
     },
     menuMode: function () {
       if (!!this.mobile) {
         return 'list';
-      } else if (getSetting('navLayout', 'top-nav') === 'top-nav') {
+      } else if (Settings.get('navLayout', 'top-nav') === 'top-nav') {
         return 'dropdown';
       } else {
         return 'accordion';

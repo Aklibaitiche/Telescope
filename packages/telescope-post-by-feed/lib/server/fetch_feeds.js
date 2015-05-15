@@ -2,9 +2,34 @@ var toMarkdown = Npm.require('to-markdown').toMarkdown;
 var he = Npm.require('he');
 var FeedParser = Npm.require('feedparser');
 var Readable = Npm.require('stream').Readable;
+var iconv = Npm.require('iconv-lite');
 
 var getFirstAdminUser = function() {
   return Meteor.users.findOne({isAdmin: true}, {sort: {createdAt: 1}});
+};
+
+var normalizeEncoding = function (contentBuffer) {
+  // got from https://github.com/szwacz/sputnik/
+  var encoding;
+  var content = contentBuffer.toString();
+
+  var xmlDeclaration = content.match(/^<\?xml .*\?>/);
+  if (xmlDeclaration) {
+    var encodingDeclaration = xmlDeclaration[0].match(/encoding=("|').*?("|')/);
+    if (encodingDeclaration) {
+      encoding = encodingDeclaration[0].substring(10, encodingDeclaration[0].length - 1);
+    }
+  }
+
+  if (encoding && encoding.toLowerCase() !== 'utf-8') {
+    try {
+      content = iconv.decode(contentBuffer, encoding);
+    } catch (err) {
+      // detected encoding is not supported, leave it as it is
+    }
+  }
+
+  return content;
 };
 
 var feedHandler = {
@@ -17,9 +42,9 @@ var feedHandler = {
   },
 
   getItemCategories: function(item, feedCategories) {
-    
+
     var itemCategories = [];
-    
+
     // loop over RSS categories for the current item if it has any
     if (item.categories && item.categories.length > 0) {
       item.categories.forEach(function(name) {
@@ -41,7 +66,8 @@ var feedHandler = {
     return itemCategories;
   },
 
-  handle: function(content, userId, feedCategories, feedId) {
+  handle: function(contentBuffer, userId, feedCategories, feedId) {
+    var content = normalizeEncoding(contentBuffer);
     var stream = this.getStream(content),
     feedParser = new FeedParser(),
     newItemsCount = 0,
@@ -50,11 +76,11 @@ var feedHandler = {
     stream.pipe(feedParser);
 
     feedParser.on('meta', Meteor.bindEnvironment(function(meta) {
-      clog('// Parsing RSS feed: '+ meta.title);
+      Telescope.log('// Parsing RSS feed: '+ meta.title);
     }));
 
     feedParser.on('error', Meteor.bindEnvironment(function(error) {
-      clog(error);
+      Telescope.log(error);
     }));
 
     feedParser.on('readable', Meteor.bindEnvironment(function() {
@@ -68,7 +94,7 @@ var feedHandler = {
 
         // check if post already exists
         if (!!Posts.findOne({feedItemId: item.guid})) {
-          clog('// Feed item already imported');
+          Telescope.log('// Feed item already imported');
           continue;
         }
 
@@ -100,22 +126,22 @@ var feedHandler = {
           post.postedAt = moment(item.pubdate).toDate();
 
         try {
-          submitPost(post);
+          Posts.submit(post);
         } catch (error) {
           // catch errors so they don't stop the loop
-          clog(error);
+          Telescope.log(error);
         }
       }
 
-      // clog('// Found ' + newItemsCount + ' new feed items');
+      // Telescope.log('// Found ' + newItemsCount + ' new feed items');
     }, function() {
-      clog('Failed to bind environment');
+      Telescope.log('Failed to bind environment');
     }, feedParser));
   }
 };
 
-var fetchFeeds = function() {
-  var content;
+fetchFeeds = function() {
+  var contentBuffer;
 
   Feeds.find().forEach(function(feed) {
 
@@ -125,8 +151,8 @@ var fetchFeeds = function() {
     var feedId = feed._id;
 
     try {
-      content = HTTP.get(feed.url).content;
-      feedHandler.handle(content, userId, feedCategories, feedId);
+      contentBuffer = HTTP.get(feed.url, {responseType: 'buffer'}).content;
+      feedHandler.handle(contentBuffer, userId, feedCategories, feedId);
     } catch (error) {
       console.log(error);
       return true; // just go to next feed URL
@@ -144,4 +170,4 @@ Meteor.methods({
   testToMarkdown: function (text) {
     console.log(toMarkdown(text));
   }
-})
+});
